@@ -7,13 +7,13 @@
 
 
 //AP definitions
-#define AP_SSID "Wonderland"
-#define AP_PASSWORD "Karman112233"
+#define AP_SSID "your_ssid"
+#define AP_PASSWORD "your_password"
 #define DEVICE_NAME  "test"
-#define MQ_SERVER      "10.0.0.10"
+#define MQ_SERVER      "10.0.0.10" //Mqtt Server IP
 #define MQ_SERVERPORT  1883
-#define MQTT_SUB_TOPIC "/house/alarm/action/#"
-#define MQTT_PUB_TOPIC "/house/alarm/"
+#define MQTT_SUB_TOPIC "/house/alarm/action/#"  //Not Used
+#define MQTT_PUB_TOPIC "/house/alarm/"   //Publishing topic
 
 /*******************************/
 WiFiClient wifiClient;
