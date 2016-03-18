@@ -7,13 +7,13 @@
 
 
 //AP definitions
-#define AP_SSID "your_ssid"
-#define AP_PASSWORD "your_password"
+#define AP_SSID "Wonderland"
+#define AP_PASSWORD "Karman112233"
 #define DEVICE_NAME  "test"
-#define MQ_SERVER      "10.0.0.10" //Mqtt Server IP
+#define MQ_SERVER      "10.0.0.10"
 #define MQ_SERVERPORT  1883
-#define MQTT_SUB_TOPIC "/house/alarm/action/#"  //Not Used
-#define MQTT_PUB_TOPIC "/house/alarm/"   //Publishing topic
+#define MQTT_SUB_TOPIC "/house/alarm/action/#"
+#define MQTT_PUB_TOPIC "/house/alarm/"
 
 /*******************************/
 WiFiClient wifiClient;
@@ -21,7 +21,7 @@ PubSubClient mqtt(wifiClient);
 ADC_MODE(ADC_VCC);
 /*********** VARS ********************/
 const int MqttZoneUpdateInterval = 1000;
-const int MqttAlarmUpdateInterval = 10000;
+const int MqttAlarmUpdateInterval = 1000;
 
 String BusMessage = "";
 byte ZoneStatus[33];
@@ -32,6 +32,14 @@ unsigned long LastClkSignal = 0;
 unsigned long lastZoneUpdate = 0;
 unsigned long lastAlarmUpdate = 0;
 //unsigned long lastZoneUpdate = 0;
+
+typedef  struct  {
+  int status; 
+  
+} struct_alarm_status;
+
+struct_alarm_status AlarmStatus;
+struct_alarm_status OldAlarmStatus;
 /*******************************/
 
 /************* Setup ******************/
@@ -94,10 +102,13 @@ void loop()
   String Message = BusMessage ;  
   // ## Clear old message
   BusMessage = "";
+
+  //Message = "110100010000000000000000000100010000000000000000000000000000010000000000000000000000000101110101";
   
-  // ##Copy old
-  // ##Copy old
+  
+  // ##Copy New to Old
   memcpy(OldZoneStatus, ZoneStatus, sizeof(ZoneStatus));
+  memcpy(&OldAlarmStatus, &AlarmStatus, sizeof(struct_alarm_status));
 
   // ## Decode the message
   decodeMessage(Message);
@@ -117,10 +128,7 @@ void loop()
   }
   
   // Do immedate Update if zone changed
-  if(memcmp ( OldZoneStatus, ZoneStatus, sizeof(ZoneStatus)) == 0){
-   // Serial.println("Satus same");
-    
-  }else{
+  if(memcmp ( OldZoneStatus, ZoneStatus, sizeof(ZoneStatus)) != 0){
     
     for (int i = 0;i<33;i++){
       Serial.print(ZoneStatus[i],DEC);  
@@ -130,10 +138,17 @@ void loop()
      for (int i = 0;i<33;i++){
       Serial.print(OldZoneStatus[i],DEC);  
     }
-     Serial.println("");
+    Serial.println("");
     Serial.println("Not same");
 
     sendZonesStatus(false) ; 
+  }
+
+  // Do immedate Update if Alarm Status changed
+  if(memcmp (&OldAlarmStatus, &AlarmStatus, sizeof(struct_alarm_status)) != 0){
+    
+    sendAlarmStatus();
+    
   }
 
   // ## Do MQTT
@@ -158,9 +173,10 @@ void sendZonesStatus(bool All){
   // Set last update
   lastZoneUpdate = millis();
 }
-void sendAlarmStatus(){
-  lastAlarmUpdate = millis();
-}
+
+
+
+
 void sendZoneStatus(String ZONE, int status )
 {
   String topic;
@@ -179,6 +195,26 @@ void sendZoneStatus(String ZONE, int status )
    // Serial.println(F("OK!"));
  }
 
+}
+
+
+/******************************  Send Alarm Status  *******************************/
+void sendAlarmStatus(){
+  lastAlarmUpdate = millis();
+  
+  String topic;
+  // ## Make topic
+  topic = MQTT_PUB_TOPIC;
+  topic += "status/" ;
+
+  // ##Convert Int to Ascii
+  int value = AlarmStatus.status +'0';
+  //Serial.print(AlarmStatus.status,DEC);
+  if (send_mqtt((char*)topic.c_str(), (char*)&value) == false) {
+    Serial.println(F("Failed to send Alarm update"));
+  }
+  
+  
 }
 /**********************************************  WIFI connect *******************************************************/
 void wifiConnect()
@@ -213,7 +249,7 @@ void wifiConnect()
 
 /****************************************** Send MQTT *******************************************************************/
 bool send_mqtt(char* topic, char* value) {
-
+  //Serial.print("Sending mqtt" );Serial.print(topic);Serial.print(":");Serial.println(value);
   return mqtt.publish(topic, value);
 
 }
@@ -225,7 +261,7 @@ void MQTT_connect() {
   String clientName;
   
   clientName = DEVICE_NAME;
-  clientName += String(micros() & 0xff, 16);
+  clientName += String(micros() & 0xffff, 16);
 
   Serial.print("Connecting to ");
   Serial.print(MQ_SERVER);
@@ -313,7 +349,29 @@ void processZoneStatus(String &msg){
      
 }
 
+/****************************** Process Alarm (D1) Status connect *****************************************/
+/*
+ * Might be first 5 bytes are Partition1 and 2nd 5 bytes is partion 2??
+ * Alarm Set:     11010001 00000000 01000000 00010001 00000000 00000000 00000000 00000100 00000000 00000000 00000001 01110101    
+ * Alarm Not set: 11010001 00000000 00000000 00010001 00000000 00000000 00000000 01000100 00000000 00000000 00000001 01001111
+ * 
+ * 
+ */
 
+void processAlarmStatus(String &msg){
+    
+    AlarmStatus.status = (msg[(8+8+1)]=='1')? 1: 2;
+
+   // Serial.print("Alarm Status: ");Serial.println(AlarmStatus.status);
+     
+}
+/*********************************************************************************************************/
+
+/****************************** decodeMessage ****************************************
+ *  
+ * Check Command type and call approriate function 
+ * 
+ */
 void decodeMessage(String &msg){
   
   int cmd = GetIntFromString(msg.substring(0,8));   
@@ -324,7 +382,8 @@ void decodeMessage(String &msg){
       processZoneStatus(msg);
       
     break;
-    case 0xD1: //Not sure yet
+    case 0xD1: //Seems like Alarm status
+     processAlarmStatus(msg);
     
     break;
     case 0xD2: //Action Message;
