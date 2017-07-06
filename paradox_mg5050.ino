@@ -7,8 +7,8 @@
 
 
 //AP definitions
-#define AP_SSID "Wonderland"
-#define AP_PASSWORD "Karman112233"
+#define AP_SSID "ap_ssid"
+#define AP_PASSWORD "password"
 #define DEVICE_NAME  "test"
 #define MQ_SERVER      "10.0.0.10"
 #define MQ_SERVERPORT  1883
