@@ -7,20 +7,20 @@
 
 
 //AP definitions
-#define AP_SSID "ap_ssid"
-#define AP_PASSWORD "password"
+#define AP_SSID "****"
+#define AP_PASSWORD "****"
 #define DEVICE_NAME  "test"
-#define MQ_SERVER      "10.0.0.10"
+#define MQ_SERVER      "***"
 #define MQ_SERVERPORT  1883
 #define MQTT_SUB_TOPIC "/house/alarm/action/#"
-#define MQTT_PUB_TOPIC "/house/alarm/"
+#define MQTT_PUB_TOPIC "/Paradox/alarm/EspInterface/"
 
 /*******************************/
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 ADC_MODE(ADC_VCC);
 /*********** VARS ********************/
-const int MqttZoneUpdateInterval = 1000;
+const int MqttZoneUpdateInterval = 3000;
 const int MqttAlarmUpdateInterval = 1000;
 
 String BusMessage = "";
@@ -56,14 +56,17 @@ void setup()
   attachInterrupt(CLK,interuptClockFalling,FALLING);
   
   Serial.println("Setting up MQTT!");
-  mqtt.setServer(MQ_SERVER, MQ_SERVERPORT);
+  
+   mqtt.setServer(MQ_SERVER, MQ_SERVERPORT);
   //mqtt.setCallback(do_mqtt_topic_receive);
   
  
   Serial.println("Ready!");
   Serial.print("Current Voltage:"); Serial.println(ESP.getVcc());
 
-  
+  //Set to now so that don't sent data before receive info
+  //lastZoneUpdate = millis();
+  //lastAlarmUpdate = millis();
 }
 
 /*
@@ -92,7 +95,6 @@ void loop()
   }
 
   
-  
   // ## Check if there anything new on the Bus
   if(!checkClockIdle() or BusMessage.length() < 2  ){
     return ; 
@@ -117,7 +119,7 @@ void loop()
   if (currentMillis - lastZoneUpdate >= MqttZoneUpdateInterval) {
     Serial.println("Sending Zone Updates");
     // Send All zones status
-    sendZonesStatus();
+     sendZonesStatus();
   }
   
   // ## Send all Zone statuss every interval
@@ -182,8 +184,10 @@ void sendZoneStatus(String ZONE, int status )
   String topic;
   // ## Make topic
   topic = MQTT_PUB_TOPIC;
-  topic += "zone/status/" ;
+  topic += "zone/";
   topic += ZONE;
+  topic += "/value" ;
+  
   
  // Serial.print("Publishing Zone to Topic: ");  Serial.print(topic);Serial.print(" Value off:");Serial.println(status,DEC);
   // ##Convert Int to Ascii
@@ -205,12 +209,16 @@ void sendAlarmStatus(){
   String topic;
   // ## Make topic
   topic = MQTT_PUB_TOPIC;
-  topic += "status/" ;
+  topic += "alarm/value" ;
 
   // ##Convert Int to Ascii
-  int value = AlarmStatus.status +'0';
+  //int value = AlarmStatus.status +'0';
+  //AlarmStatus.status = 10;
+  String value = (String) AlarmStatus.status ;
+  
+  
   //Serial.print(AlarmStatus.status,DEC);
-  if (send_mqtt((char*)topic.c_str(), (char*)&value) == false) {
+  if (send_mqtt((char*)topic.c_str(), value) == false) {
     Serial.println(F("Failed to send Alarm update"));
   }
   
@@ -253,6 +261,11 @@ bool send_mqtt(char* topic, char* value) {
   return mqtt.publish(topic, value);
 
 }
+bool send_mqtt(char* topic, String value) {
+  //Serial.print("Sending mqtt" );Serial.print(topic);Serial.print(":");Serial.println(value);
+  return mqtt.publish(topic, String(value).c_str());
+
+}
 /****************************************** MQTT  *******************************************************************/
 
 void MQTT_connect() {
@@ -289,11 +302,11 @@ void MQTT_connect() {
 
       if (mqtt.publish(MQTT_PUB_TOPIC, "Hello, Johnny 5 is alive!")) {
         Serial.println("Publish ok");
-        Serial.print("Subscribing to: ");
-        Serial.println(MQTT_SUB_TOPIC);
+       // Serial.print("Subscribing to: ");
+        //Serial.println(MQTT_SUB_TOPIC);
 
         //Subscribe to topic
-        mqtt.subscribe(MQTT_SUB_TOPIC);
+       // mqtt.subscribe(MQTT_SUB_TOPIC);
       }
       else {
         Serial.println("Publish failed");
@@ -352,18 +365,58 @@ void processZoneStatus(String &msg){
 /****************************** Process Alarm (D1) Status connect *****************************************/
 /*
  * Might be first 5 bytes are Partition1 and 2nd 5 bytes is partion 2??
- * Alarm Set:     11010001 00000000 01000000 00010001 00000000 00000000 00000000 00000100 00000000 00000000 00000001 01110101    
  * Alarm Not set: 11010001 00000000 00000000 00010001 00000000 00000000 00000000 01000100 00000000 00000000 00000001 01001111
+ * Alarm Set:     11010001 00000000 01000000 00010001 00000000 00000000 00000000 00000100 00000000 00000000 00000001 01110101  
+ * Alarm STay     11010001 00000000 00000000 00010001 00000000 00000000 00000100 00000100 00000000 00000000 00000001 10110000
+ * Alarm Sleep    11010001 00000000 00000100 00010001 00000000 00000000 00000000 00000100 00000000 00000000 00000001 00001101
  * 
  * 
  */
 
-void processAlarmStatus(String &msg){
-    
-    AlarmStatus.status = (msg[(8+8+1)]=='1')? 1: 2;
+void processAlarmStatus(String &msg) {
 
-   // Serial.print("Alarm Status: ");Serial.println(AlarmStatus.status);
-     
+//  AlarmStatus.status = (msg[(8 + 8 +8 +8 + 8 8 + 8 + 1)] == '1') ? 1 : 0;
+
+  //If set , then get status
+  if(msg[((8*7) + 1)] == '0'){
+
+      //Sleep
+      if(msg[((8*2) + 5)] == '1'){
+        
+        AlarmStatus.status = 20;
+      }
+      //Stay
+      if(msg[((8*6) + 5)] == '1'){
+        AlarmStatus.status = 30;
+      }
+
+      //Full Arm
+      if( msg[((8*2) + 1)] == '1' ){
+        //Exit Delay
+        if(msg[((8*2) + 0)] == '1'){
+          AlarmStatus.status = 40;
+        }else 
+        //Full Alarm
+        if(msg[((8*2) + 0)] == '0'){
+          AlarmStatus.status = 49;
+        } else{
+          
+          AlarmStatus.status = 45;
+        }
+
+        
+      }
+      
+  }else{
+    //Not Set
+    AlarmStatus.status = 10;
+  }
+  
+  //Only print if not set
+  if(AlarmStatus.status != 10){
+    Serial.print("Alarm Status: ");Serial.println(AlarmStatus.status);
+    printSerial(msg, BIN);
+  }
 }
 /*********************************************************************************************************/
 
@@ -503,27 +556,35 @@ unsigned long waitCLKchange(int currentState)
 
 
 
-void printSerialDec(String &st)
+void printSerial(String &st){
+  
+  printSerial(st,1000);
+}
+
+void printSerial(String &st,int Format)
 {
   
-  Serial.print("DEC: ");
+
   //Get number of Bytes
   int Bytes = (st.length()) / 8;
   
   String  val = "";
 
   for(int i=0;i<Bytes;i++)
-  {
-    String kk = "012345670123456701234567";
+  {    
     val = st.substring((i*8),((i*8))+8);
- 
-    Serial.print(GetIntFromString(val),DEC);
+    if(Format == 1000){
+      Serial.print(GetIntFromString(val));
+    }else if(Format == BIN){
+       Serial.print(val);
+    }else{
+       Serial.print(GetIntFromString(val),Format);
+    }
     Serial.print(" ");
     
   }
    Serial.println("");
 }
-
 
 
 
