@@ -7,8 +7,8 @@
 
 
 //AP definitions
-#define AP_SSID "****"
-#define AP_PASSWORD "****"
+#define AP_SSID "***"
+#define AP_PASSWORD "***"
 #define DEVICE_NAME  "test"
 #define MQ_SERVER      "***"
 #define MQ_SERVERPORT  1883
@@ -329,6 +329,8 @@ void MQTT_connect() {
   Serial.println("MQTT Connected!");
 }
 
+
+
 /*******************************************************************************************************/
 /****************************** Process Zone Status connect *****************************************/
 /**
@@ -427,7 +429,27 @@ void processAlarmStatus(String &msg) {
  */
 void decodeMessage(String &msg){
   
-  int cmd = GetIntFromString(msg.substring(0,8));   
+  int cmd = GetIntFromString(msg.substring(0, 8));
+  
+  //Some commands have trailing "00 00 00 00" so remove
+  if(cmd == 0xD0 || cmd == 0xD1){
+      //Strip last 00's
+      msg = msg.substring(0, msg.length()-(4*8)-1);
+      
+      if(!check_crc(msg)){
+         Serial.println("CRC Faied:");
+        printSerial(msg, HEX);
+        return;
+      }
+      
+  }else{
+    
+      if(!check_crc(msg)) {
+         Serial.println("CRC Faied:");
+        printSerial(msg, HEX);
+        return;
+      }
+  } 
 
   switch (cmd){
     case 0xd0: //Zone Status Message
@@ -459,6 +481,67 @@ void decodeMessage(String &msg){
   
 }
 
+/**
+ * CRC8
+ * 
+ * Do Maxim crc8 calc
+ */
+uint8_t crc8( uint8_t *addr, uint8_t len)
+{
+     uint8_t crc=0;
+     
+     for (uint8_t i=0; i<len;i++) 
+     {
+           uint8_t inbyte = addr[i];
+           for (uint8_t j=0;j<8;j++) 
+           {
+                 uint8_t mix = (crc ^ inbyte) & 0x01;
+                 crc >>= 1;
+                 if (mix) 
+                       crc ^= 0x8C;
+                 
+                 inbyte >>= 1;
+           }
+     }
+     return crc;
+}
+
+/**
+ * Check CRC
+ * Check if CRC is valid
+ * 
+ */
+uint8_t check_crc(String &st){
+  
+ // printSerial(st);
+ //
+
+  String  val = "";
+  int Bytes =   (st.length()) / 8;
+  uint8_t calcCRCByte;
+
+  
+  //Serial.print("Bytes :");Serial.println(Bytes);
+  //printSerialHex(st);
+    
+  //Make byte array    
+  uint8_t* BinnaryStr = strToBinArray(st);    
+  
+  uint8_t CRC = BinnaryStr[Bytes-1];
+  
+  calcCRCByte = crc8(BinnaryStr,(int) Bytes-1);
+  
+  //Serial.print("Crc :");Serial.print((int)CRC,HEX);
+
+  //Serial.print("CrcCalc :");Serial.print((int)calcCRCByte,HEX);
+  //Serial.println("");
+     
+   
+
+  return calcCRCByte == CRC;
+
+  
+}
 
 
 /*
@@ -586,6 +669,30 @@ void printSerial(String &st,int Format)
    Serial.println("");
 }
 
+/**
+ * Convert str to binary array
+ * 
+ */
+uint8_t* strToBinArray(String &st)
+{
+  int Bytes = (st.length()) / 8;
+  uint8_t Data[Bytes];
+  
+  String  val = "";
+
+  for (int i = 0; i < Bytes; i++)
+  {
+    //String kk = "012345670123456701234567";
+    val = st.substring((i * 8), ((i * 8)) + 8);
+
+    Data[i] = GetIntFromString(val);
+    
+
+  }
+
+  
+  return Data;
+}
 
 
 
