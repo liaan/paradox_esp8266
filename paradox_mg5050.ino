@@ -9,7 +9,7 @@
 //AP definitions
 #define AP_SSID "***"
 #define AP_PASSWORD "***"
-#define DEVICE_NAME  "test"
+#define DEVICE_NAME  "espParadox"
 #define MQ_SERVER      "***"
 #define MQ_SERVERPORT  1883
 #define MQTT_SUB_TOPIC "/house/alarm/action/#"
@@ -34,7 +34,7 @@ unsigned long lastAlarmUpdate = 0;
 //unsigned long lastZoneUpdate = 0;
 
 typedef  struct  {
-  int status; 
+  int status =0; 
   
 } struct_alarm_status;
 
@@ -67,6 +67,8 @@ void setup()
   //Set to now so that don't sent data before receive info
   //lastZoneUpdate = millis();
   //lastAlarmUpdate = millis();
+
+  
 }
 
 /*
@@ -205,6 +207,10 @@ void sendZoneStatus(String ZONE, int status )
 /******************************  Send Alarm Status  *******************************/
 void sendAlarmStatus(){
   lastAlarmUpdate = millis();
+
+  if(AlarmStatus.status ==0 ){
+    return; 
+  }
   
   String topic;
   // ## Make topic
