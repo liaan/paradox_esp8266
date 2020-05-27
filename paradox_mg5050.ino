@@ -1,27 +1,30 @@
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <ESP.h>
 #include <PubSubClient.h>
+
 
 #define CLK 0 // Keybus Yellow
 #define DTA 2 // Keybus Green
 
 
 //AP definitions
-#define AP_SSID "***"
+#define AP_SSID "****"
 #define AP_PASSWORD "***"
-#define DEVICE_NAME  "espParadox"
-#define MQ_SERVER      "***"
+#define DEVICE_NAME  "ParadoxEspInterface-01"
+#define MQ_SERVER      "mqtt.local"
 #define MQ_SERVERPORT  1883
-#define MQTT_SUB_TOPIC "/house/alarm/action/#"
+#define MQTT_SUB_TOPIC "/Paradox/alarm/set"
 #define MQTT_PUB_TOPIC "/Paradox/alarm/EspInterface/"
 
 /*******************************/
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 ADC_MODE(ADC_VCC);
+
 /*********** VARS ********************/
-const int MqttZoneUpdateInterval = 3000;
+const int MqttZoneUpdateInterval = 1000;
 const int MqttAlarmUpdateInterval = 1000;
+const int MqttEspStatusUpdateInterval = 5000;
 
 String BusMessage = "";
 byte ZoneStatus[33];
@@ -31,16 +34,40 @@ unsigned long LastClkSignal = 0;
 
 unsigned long lastZoneUpdate = 0;
 unsigned long lastAlarmUpdate = 0;
+unsigned long lastEspStatus = 0;
 //unsigned long lastZoneUpdate = 0;
 
 typedef  struct  {
-  int status =0; 
+  int status; 
   
 } struct_alarm_status;
 
 struct_alarm_status AlarmStatus;
 struct_alarm_status OldAlarmStatus;
 /*******************************/
+
+void interuptClockFalling();
+void loop();
+void  wifiConnect();
+void MQTT_connect();
+bool checkClockIdle();
+void decodeMessage(String &msg);
+void sendZonesStatus();
+void sendZonesStatus(bool ALL);
+void sendZoneStatus(String ZONE, int status);
+void sendAlarmStatus();
+void sendZonesStatus(String ZONE, int status );
+void sendEspStatus();
+bool send_mqtt(char* topic, char* value);
+bool send_mqtt(char* topic, String value);
+void printSerial(String &st);
+void printSerial(String &st,int Format);
+
+
+uint8_t* strToBinArray(String &st);
+uint8_t check_crc(String &st);
+unsigned int GetIntFromString(String str);
+
 
 /************* Setup ******************/
 void setup()
@@ -56,21 +83,18 @@ void setup()
   attachInterrupt(CLK,interuptClockFalling,FALLING);
   
   Serial.println("Setting up MQTT!");
-  
-   mqtt.setServer(MQ_SERVER, MQ_SERVERPORT);
+  mqtt.setServer(MQ_SERVER, MQ_SERVERPORT);
   //mqtt.setCallback(do_mqtt_topic_receive);
   
  
   Serial.println("Ready!");
   Serial.print("Current Voltage:"); Serial.println(ESP.getVcc());
 
-  //Set to now so that don't sent data before receive info
-  //lastZoneUpdate = millis();
-  //lastAlarmUpdate = millis();
-
   
 }
+ 
 
+ 
 /*
  *  Main Loop
  *  
@@ -94,6 +118,13 @@ void loop()
   if (mqtt.state() != MQTT_CONNECTED) {
     MQTT_connect();
     return;
+  }
+
+      // ## Send all Zone statuss every interval
+  if (currentMillis - lastEspStatus >= MqttEspStatusUpdateInterval) {
+    Serial.println("Sending EspStatus Updates");
+    // ## Send Esp Status
+    sendEspStatus();
   }
 
   
@@ -159,6 +190,28 @@ void loop()
   mqtt.loop();
   
 }
+
+/***************** Send ESP Status *******************/
+
+void sendEspStatus(){
+  lastEspStatus = millis();
+  
+  String topic;
+  // ## Make topic
+  topic = MQTT_PUB_TOPIC;
+  topic += "esp-status/" ;
+
+  
+   
+  String voltage = (String) ESP.getVcc() ;
+
+  if (send_mqtt((char*)(topic+"voltage/").c_str(), voltage) == false) {
+    Serial.println(F("Failed to send Esp voltage update"));
+  }
+  
+  
+} 
+
 /******************************  Send Zones Status  *******************************/
 void sendZonesStatus(){
   sendZonesStatus(true) ;  
@@ -236,6 +289,7 @@ void wifiConnect()
   Serial.print("Connecting to AP:");
   Serial.print(AP_SSID);
 
+  WiFi.hostname(DEVICE_NAME);
   WiFi.begin(AP_SSID, AP_PASSWORD);
   
   int repeat = 0;
@@ -247,6 +301,9 @@ void wifiConnect()
     repeat++;
      
     if (repeat > 10){
+      Serial.print("Failed to connect.. ");
+      //ESP.restart();
+
      // wifi_no_connect();
       break;
       return;
@@ -258,6 +315,8 @@ void wifiConnect()
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+  Serial.println("Hostname: ");
+  Serial.println(WiFi.hostname());
 }
 /***********************************************************************************************************************/
 
@@ -597,7 +656,7 @@ unsigned int GetIntFromString(String str){
  
   return r;
 }
-void interuptClockFalling()
+void ICACHE_RAM_ATTR interuptClockFalling()
 {
 
    //## Set last Clock time
@@ -609,13 +668,18 @@ void interuptClockFalling()
   * Panel to other is on Clock Falling edge, Reply is after keeping DATA low (it seems) and then reply on Rising edge
   */
   
+
+  if (micros() - LastClkSignal < 150) {
+    
+  }
   //Just add small delay to make sure DATA is already set, each clock is 500 ~microseconds, Seem to have about 50ms delay before Data goes high when keypad responce and creating garbage .
-  delayMicroseconds(150);  
+  //delayMicroseconds(150);  
+
   if (!digitalRead(DTA)) BusMessage += "1"; else BusMessage += "0";
   
   if (BusMessage.length() > 200)
   {
-    Serial.println("String to long");
+    //Serial.println("String to long");
     //Serial.println((String) BusMessage);
     BusMessage = "";
 //    printSerialHex(BusMessage);
@@ -699,6 +763,3 @@ uint8_t* strToBinArray(String &st)
   
   return Data;
 }
-
-
-
