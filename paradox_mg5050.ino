@@ -669,7 +669,7 @@ void ICACHE_RAM_ATTR interuptClockFalling()
   */
   
 
-  if (micros() - LastClkSignal < 150) {
+  while (micros() - LastClkSignal < 150) {
     
   }
   //Just add small delay to make sure DATA is already set, each clock is 500 ~microseconds, Seem to have about 50ms delay before Data goes high when keypad responce and creating garbage .
